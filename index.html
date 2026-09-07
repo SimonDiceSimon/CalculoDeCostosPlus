@@ -1064,8 +1064,6 @@
           appId: "1:392272316254:web:f7397a30ba85132587f1cf"
         };
 
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'calculo-costos-productor';
-
     // Inicializar Firebase
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -1092,7 +1090,7 @@
     let margenMinoristaSeleccionado = 50;
     let margenMayoristaSeleccionado = 45;
 
-    // Vincular funciones de registro e ingreso inmediatamente
+    // Vincular funciones de registro e ingreso inmediatamente a window
     window.procesarLogin = procesarLogin;
     window.procesarRegistro = procesarRegistro;
 
@@ -1107,7 +1105,7 @@
           await signInAnonymously(auth);
         }
       } catch (err) {
-        console.warn("Autenticación Firebase en modo local o pendiente de activación:", err);
+        console.warn("Autenticación Firebase en modo local o pendiente de autorización:", err);
       }
 
       onAuthStateChanged(auth, (user) => {
@@ -1187,7 +1185,7 @@
 
       // 2. Consulta en Firestore si está disponible
       try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'emprendimientos', idEmprendimiento);
+        const docRef = doc(db, 'emprendimientos', idEmprendimiento);
         const snap = await getDoc(docRef);
         if (snap.exists()) {
           const data = snap.data();
@@ -1267,70 +1265,13 @@
 
       // Sincronizar con Firestore en segundo plano (sin bloquear al usuario)
       try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'emprendimientos', idEmprendimiento);
+        const docRef = doc(db, 'emprendimientos', idEmprendimiento);
         setDoc(docRef, nuevoEmprendimiento).catch(err => {
-          console.warn("Sincronización en la nube pendiente:", err);
+          console.warn("Sincronización en la nube diferida:", err);
         });
       } catch (err) {
         console.warn("Firestore diferido:", err);
       }
-    }
-
-    async function procesarRegistro(e) {
-      if (e && e.preventDefault) e.preventDefault();
-      const nombreInput = document.getElementById('regNombre').value.trim();
-      const pinInput = document.getElementById('regPin').value.trim();
-      const pinConfirmaInput = document.getElementById('regPinConfirma').value.trim();
-      const errorDiv = document.getElementById('mensajeErrorRegistro');
-      const textoError = document.getElementById('textoErrorRegistro');
-      if (errorDiv) errorDiv.classList.add('hidden');
-
-      if (!nombreInput) {
-        if (textoError) textoError.innerText = "Por favor escribí el nombre del emprendimiento.";
-        if (errorDiv) errorDiv.classList.remove('hidden');
-        return;
-      }
-      if (!/^[0-9]{4}$/.test(pinInput)) {
-        if (textoError) textoError.innerText = "El PIN debe ser de 4 números.";
-        if (errorDiv) errorDiv.classList.remove('hidden');
-        return;
-      }
-
-      if (pinInput !== pinConfirmaInput) {
-        if (textoError) textoError.innerText = "Los dos PINs ingresados no coinciden.";
-        if (errorDiv) errorDiv.classList.remove('hidden');
-        return;
-      }
-
-      const idEmprendimiento = slugificarNombre(nombreInput);
-
-      const nuevoEmprendimiento = {
-        id: idEmprendimiento,
-        nombre: nombreInput,
-        pin: pinInput,
-        estado: 'activo',
-        fechaRegistro: new Date().toISOString()
-      };
-
-      // Guardar localmente de inmediato para que siempre funcione
-      localStorage.setItem(`sgpp_emp_${idEmprendimiento}`, JSON.stringify(nuevoEmprendimiento));
-      sesionActiva = {
-        id: idEmprendimiento,
-        nombre: nombreInput,
-        pin: pinInput
-      };
-      localStorage.setItem('sgpp_sesion_activa', JSON.stringify(sesionActiva));
-
-      // Intentar sincronizar con Firestore en segundo plano
-      try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'emprendimientos', idEmprendimiento);
-        await setDoc(docRef, nuevoEmprendimiento);
-      } catch (err) {
-        console.warn("Registro guardado localmente (Firestore pendiente de configuración):", err);
-      }
-
-      iniciarSincronizacionEmprendimiento();
-      mostrarToast(`¡Bienvenido! Emprendimiento "${nombreInput}" registrado.`);
     }
 
     function iniciarSincronizacionEmprendimiento() {
@@ -1411,7 +1352,7 @@
       }
 
       try {
-        const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'productos');
+        const colRef = collection(db, 'productos');
         unsubscribeProductos = onSnapshot(colRef, (snapshot) => {
           const todos = [];
           snapshot.forEach((docSnap) => {
@@ -1435,7 +1376,7 @@
             }
           }
         }, (error) => {
-          console.warn("Modo local activo (Firestore pendiente de reglas):", error);
+          console.warn("Modo local activo (Firestore pendiente de reglas o autorización):", error);
         });
       } catch (err) {
         console.warn("No se pudo iniciar listener de Firestore, operando localmente:", err);
@@ -1783,7 +1724,7 @@
 
     async function guardarPreciosFijados() {
       const prod = productosGuardados.find(p => p.id === idProductoSeleccionado);
-      if (!prod || !sesionActiva || !firebaseUser) return;
+      if (!prod || !sesionActiva) return;
 
       const costo = prod.costoUnitario || 0;
       const precioMinorista = Math.round(costo * (1 + margenMinoristaSeleccionado / 100));
@@ -1798,13 +1739,16 @@
         gananciaMayorista: precioMayorista - costo
       };
 
+      prod.preciosVenta = preciosActualizados;
+      localStorage.setItem(`sgpp_prods_${sesionActiva.id}`, JSON.stringify(productosGuardados));
+
       try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', prod.id);
+        const docRef = doc(db, 'productos', prod.id);
         await setDoc(docRef, { preciosVenta: preciosActualizados }, { merge: true });
-        mostrarToast(`Precios guardados en la nube: Feria $${formatearNumero(precioMinorista)} | Mayorista $${formatearNumero(precioMayorista)}`);
+        mostrarToast(`Precios guardados: Feria $${formatearNumero(precioMinorista)} | Mayorista $${formatearNumero(precioMayorista)}`);
       } catch (err) {
-        console.error("Error al guardar precios en Firestore:", err);
-        mostrarToast("No se pudieron guardar los precios en la nube.");
+        console.warn("Guardado de precios local completado, pendiente sincronización en nube:", err);
+        mostrarToast(`Precios guardados localmente: Feria $${formatearNumero(precioMinorista)}`);
       }
     }
 
@@ -2266,10 +2210,140 @@
     }
 
     async function guardarProducto(esTerminado = true) {
-      if (!sesionActiva || !firebaseUser) {
-        mostrarToast("Iniciá sesión para guardar en la nube.");
+      if (!sesionActiva) {
+        mostrarToast("Iniciá sesión para guardar.");
         return;
       }
+
+      const nombreInput = document.getElementById('nombreProducto').value.trim();
+      if (!nombreInput) {
+        mostrarToast("Por favor escribí el nombre del producto en el Paso 1.");
+        document.getElementById('nombreProducto').focus();
+        return;
+      }
+
+      const resultados = calcular();
+
+      const listaInsumosDetalle = [];
+      insumosReceta.forEach(item => {
+        if (item.tipo === 'compra') {
+          const compra = compras.find(c => c.id === item.compraId);
+          if (compra) {
+            const cost = (compra.costo / (compra.cantidad || 1)) * (item.cantidadUsada || 0);
+            listaInsumosDetalle.push({
+              nombre: compra.nombre,
+              detalle: `${item.cantidadUsada} ${compra.unidad} (de compra x ${compra.cantidad} ${compra.unidad})`,
+              costo: cost
+            });
+          }
+        } else {
+          listaInsumosDetalle.push({
+            nombre: item.nombreLibre || 'Insumo libre',
+            detalle: 'Insumo directo',
+            costo: item.costoLibre || 0
+          });
+        }
+      });
+
+      const fechaHoy = new Date().toISOString().split('T')[0];
+      const targetId = borradorEnEdicionId ? borradorEnEdicionId : ("prod-" + Date.now());
+
+      const productoPrevio = productosGuardados.find(p => p.id === targetId);
+      const preciosExistentes = productoPrevio ? productoPrevio.preciosVenta : null;
+
+      const datosObjeto = {
+        id: targetId,
+        emprendimientoId: sesionActiva.id,
+        nombre: nombreInput,
+        fecha: productoPrevio ? productoPrevio.fecha : fechaHoy,
+        fechaActualizacion: new Date().toISOString(),
+        estado: esTerminado ? "terminado" : "borrador",
+        unidadesProducidas: resultados.unidades,
+        tipoUnidad: document.getElementById('tipoUnidad').value,
+        costoUnitario: resultados.costoPorUnidad,
+        costoTotal: resultados.costoTotalTanda,
+        horasTotales: resultados.horasTotalesTrabajadas,
+        minutosPorUnidad: resultados.minutosPorUnidad,
+        preciosVenta: preciosExistentes,
+        insumos: listaInsumosDetalle,
+        subtotalInsumos: resultados.totalCostoInsumos,
+        subtotalTrabajo: resultados.totalCostoTrabajo,
+        subtotalLuz: resultados.totalCostoLuz,
+        subtotalExtra: resultados.extraVeintePorciento,
+        datosFormulario: {
+          nombre: nombreInput,
+          compras: JSON.parse(JSON.stringify(compras)),
+          cosechoPropio: cosechoPropio,
+          cosechaCantidad: parseFloat(document.getElementById('cosechaCantidad').value) || 0,
+          cosechaUnidad: document.getElementById('cosechaUnidad').value,
+          cosechaHoras: parseFloat(document.getElementById('cosechaHoras').value) || 0,
+          insumosReceta: JSON.parse(JSON.stringify(insumosReceta)),
+          horasCoccion: parseFloat(document.getElementById('horasCoccion').value) || 0,
+          horasEnvasado: parseFloat(document.getElementById('horasEnvasado').value) || 0,
+          valorHoraTrabajo: parseFloat(document.getElementById('valorHoraTrabajo').value) || 0,
+          tipoMedidorLuz: tipoMedidorLuz,
+          facturaLuzMensual: parseFloat(document.getElementById('facturaLuzMensual').value) || 0,
+          horasDiariasUsoLuz: parseFloat(document.getElementById('horasDiariasUsoLuz').value) || 6,
+          unidadesProducidas: resultados.unidades,
+          tipoUnidad: document.getElementById('tipoUnidad').value
+        }
+      };
+
+      // Guardar siempre en local para disponibilidad inmediata
+      if (sesionActiva) {
+        const idx = productosGuardados.findIndex(p => p.id === targetId);
+        if (idx >= 0) {
+          productosGuardados[idx] = datosObjeto;
+        } else {
+          productosGuardados.unshift(datosObjeto);
+        }
+        localStorage.setItem(`sgpp_prods_${sesionActiva.id}`, JSON.stringify(productosGuardados));
+      }
+
+      // Sincronizar en segundo plano con Firestore
+      try {
+        const docRef = doc(db, 'productos', targetId);
+        setDoc(docRef, datosObjeto).catch(err => {
+          console.warn("Guardado en nube diferido:", err);
+        });
+      } catch (err) {
+        console.warn("Error enviando a Firestore:", err);
+      }
+
+      borradorEnEdicionId = null;
+
+      if (esTerminado) {
+        mostrarToast(`"${nombreInput}" guardado en tus productos terminados.`);
+        verDetalleProducto(targetId);
+      } else {
+        mostrarToast(`Borrador "${nombreInput}" guardado sin terminar.`);
+        cambiarVista('inicio');
+      }
+    }
+
+    function solicitarEliminarProductoActual() {
+      productoAEliminarId = idProductoSeleccionado;
+      abrirModal('modalEliminar');
+    }
+
+    async function confirmarEliminarProducto() {
+      if (!productoAEliminarId || !sesionActiva) return;
+
+      productosGuardados = productosGuardados.filter(p => p.id !== productoAEliminarId);
+      localStorage.setItem(`sgpp_prods_${sesionActiva.id}`, JSON.stringify(productosGuardados));
+      cerrarModal('modalEliminar');
+
+      try {
+        const docRef = doc(db, 'productos', productoAEliminarId);
+        await deleteDoc(docRef);
+      } catch (err) {
+        console.warn("Eliminado localmente, pendiente en nube:", err);
+      }
+
+      productoAEliminarId = null;
+      mostrarToast("Producto eliminado.");
+      cambiarVista('inicio');
+    }
 
       const nombreInput = document.getElementById('nombreProducto').value.trim();
       if (!nombreInput) {
@@ -2445,7 +2519,7 @@
 
     async function importarCopiaJSON(event) {
       const file = event.target.files[0];
-      if (!file || !sesionActiva || !firebaseUser) return;
+      if (!file || !sesionActiva) return;
 
       const reader = new FileReader();
       reader.onload = async function(e) {
@@ -2454,7 +2528,7 @@
           if (Array.isArray(importados)) {
             for (const item of importados) {
               const targetId = item.id || ("prod-" + Date.now() + Math.random().toString(36).substr(2, 4));
-              const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', targetId);
+              const docRef = doc(db, 'productos', targetId);
               await setDoc(docRef, {
                 ...item,
                 id: targetId,
@@ -2462,7 +2536,7 @@
               });
             }
             cerrarModal('modalBackup');
-            mostrarToast("Datos sincronizados en la nube con éxito.");
+            mostrarToast("Datos sincronizados con éxito.");
           } else {
             mostrarToast("El archivo no tiene el formato correcto.");
           }
@@ -2511,10 +2585,12 @@
     window.exportarCopiaJSON = exportarCopiaJSON;
     window.importarCopiaJSON = importarCopiaJSON;
 
-    // Iniciar conexión al cargar
-    window.onload = function() {
+    // Iniciar conexión inmediatamente al cargar el script
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', iniciarFirebase);
+    } else {
       iniciarFirebase();
-    };
+    }
   </script>
 </body>
 </html>
