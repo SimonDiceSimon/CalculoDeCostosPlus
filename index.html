@@ -1115,7 +1115,7 @@
           if (textoNube) textoNube.innerText = "Nube Conectada";
         } else {
           if (badgeNube) badgeNube.className = "text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-800 text-amber-200 flex items-center gap-1 border border-amber-700";
-          if (textoNube) textoNube.innerText = "Modo Local / Nube lista";
+          if (textoNube) textoNube.innerText = "Modo Local";
         }
 
         // Restaurar sesión guardada localmente si existía
@@ -2343,131 +2343,6 @@
       productoAEliminarId = null;
       mostrarToast("Producto eliminado.");
       cambiarVista('inicio');
-    }
-
-      const nombreInput = document.getElementById('nombreProducto').value.trim();
-      if (!nombreInput) {
-        mostrarToast("Por favor escribí el nombre del producto en el Paso 1.");
-        document.getElementById('nombreProducto').focus();
-        return;
-      }
-
-      const resultados = calcular();
-
-      const listaInsumosDetalle = [];
-      insumosReceta.forEach(item => {
-        if (item.tipo === 'compra') {
-          const compra = compras.find(c => c.id === item.compraId);
-          if (compra) {
-            const cost = (compra.costo / (compra.cantidad || 1)) * (item.cantidadUsada || 0);
-            listaInsumosDetalle.push({
-              nombre: compra.nombre,
-              detalle: `${item.cantidadUsada} ${compra.unidad} (de compra x ${compra.cantidad} ${compra.unidad})`,
-              costo: cost
-            });
-          }
-        } else {
-          listaInsumosDetalle.push({
-            nombre: item.nombreLibre || 'Insumo libre',
-            detalle: 'Insumo directo',
-            costo: item.costoLibre || 0
-          });
-        }
-      });
-
-      const fechaHoy = new Date().toISOString().split('T')[0];
-      const targetId = borradorEnEdicionId ? borradorEnEdicionId : ("prod-" + Date.now());
-
-      const productoPrevio = productosGuardados.find(p => p.id === targetId);
-      const preciosExistentes = productoPrevio ? productoPrevio.preciosVenta : null;
-
-      const datosObjeto = {
-        id: targetId,
-        emprendimientoId: sesionActiva.id,
-        nombre: nombreInput,
-        fecha: productoPrevio ? productoPrevio.fecha : fechaHoy,
-        fechaActualizacion: new Date().toISOString(),
-        estado: esTerminado ? "terminado" : "borrador",
-        unidadesProducidas: resultados.unidades,
-        tipoUnidad: document.getElementById('tipoUnidad').value,
-        costoUnitario: resultados.costoPorUnidad,
-        costoTotal: resultados.costoTotalTanda,
-        horasTotales: resultados.horasTotalesTrabajadas,
-        minutosPorUnidad: resultados.minutosPorUnidad,
-        preciosVenta: preciosExistentes,
-        insumos: listaInsumosDetalle,
-        subtotalInsumos: resultados.totalCostoInsumos,
-        subtotalTrabajo: resultados.totalCostoTrabajo,
-        subtotalLuz: resultados.totalCostoLuz,
-        subtotalExtra: resultados.extraVeintePorciento,
-        datosFormulario: {
-          nombre: nombreInput,
-          compras: JSON.parse(JSON.stringify(compras)),
-          cosechoPropio: cosechoPropio,
-          cosechaCantidad: parseFloat(document.getElementById('cosechaCantidad').value) || 0,
-          cosechaUnidad: document.getElementById('cosechaUnidad').value,
-          cosechaHoras: parseFloat(document.getElementById('cosechaHoras').value) || 0,
-          insumosReceta: JSON.parse(JSON.stringify(insumosReceta)),
-          horasCoccion: parseFloat(document.getElementById('horasCoccion').value) || 0,
-          horasEnvasado: parseFloat(document.getElementById('horasEnvasado').value) || 0,
-          valorHoraTrabajo: parseFloat(document.getElementById('valorHoraTrabajo').value) || 0,
-          tipoMedidorLuz: tipoMedidorLuz,
-          facturaLuzMensual: parseFloat(document.getElementById('facturaLuzMensual').value) || 0,
-          horasDiariasUsoLuz: parseFloat(document.getElementById('horasDiariasUsoLuz').value) || 6,
-          unidadesProducidas: resultados.unidades,
-          tipoUnidad: document.getElementById('tipoUnidad').value
-        }
-      };
-
-      try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', targetId);
-        await setDoc(docRef, datosObjeto);
-      } catch (err) {
-        console.warn("Guardado en nube diferido:", err);
-      }
-
-      // Guardar siempre en local para disponibilidad inmediata
-      if (sesionActiva) {
-        const idx = productosGuardados.findIndex(p => p.id === targetId);
-        if (idx >= 0) {
-          productosGuardados[idx] = datosObjeto;
-        } else {
-          productosGuardados.unshift(datosObjeto);
-        }
-        localStorage.setItem(`sgpp_prods_${sesionActiva.id}`, JSON.stringify(productosGuardados));
-      }
-
-      borradorEnEdicionId = null;
-
-      if (esTerminado) {
-        mostrarToast(`"${nombreInput}" guardado en tus productos terminados.`);
-        verDetalleProducto(targetId);
-      } else {
-        mostrarToast(`Borrador "${nombreInput}" guardado sin terminar.`);
-        cambiarVista('inicio');
-      }
-    }
-
-    function solicitarEliminarProductoActual() {
-      productoAEliminarId = idProductoSeleccionado;
-      abrirModal('modalEliminar');
-    }
-
-    async function confirmarEliminarProducto() {
-      if (!productoAEliminarId || !firebaseUser) return;
-
-      try {
-        const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'productos', productoAEliminarId);
-        await deleteDoc(docRef);
-
-        cerrarModal('modalEliminar');
-        productoAEliminarId = null;
-        mostrarToast("Producto eliminado de la nube.");
-        cambiarVista('inicio');
-      } catch (err) {
-        console.error("Error al eliminar producto en Firestore:", err);
-        mostrarToast("No se pudo eliminar el producto.");
-      }
     }
 
     function formatearNumero(num) {
